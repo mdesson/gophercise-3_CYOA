@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io/ioutil"
+	"log"
+	"net/http"
 )
 
 // StoryArc Contains data for one page of choose your own adventure novel
@@ -16,6 +19,30 @@ type StoryArc struct {
 	} `json:"options"`
 }
 
+// StoryHandler HttpHandler for Story
+type StoryHandler struct {
+	Arcs     map[string]StoryArc
+	Template string
+}
+
+func (handler StoryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	arcKey := r.URL.Path[1:]
+
+	if arcKey == "" {
+		arcKey = "intro"
+	}
+
+	arc, ok := handler.Arcs[arcKey]
+	if !ok {
+		fmt.Fprintf(w, "<p>Invalid URL: Story arc named %v not found</p>", arcKey)
+		return
+	}
+	parsedTemplate := template.Must(template.New(arcKey).Parse(handler.Template))
+	if err := parsedTemplate.Execute(w, arc); err != nil {
+		log.Fatal(err)
+	}
+}
+
 var templateText = `
 <!DOCTYPE html>
 <html>
@@ -25,20 +52,19 @@ var templateText = `
   </head>
   <body>
     <h1>{{.Title}}</h1>
-    {{range .Paragraphs}}
+    {{range .Story}}
     <p>{{.}}</p>
     {{end}}
     <hr>
     {{if .Options}}
     <ul>
       {{range .Options}}
-      <li><a href="/{{.Arc}}">{{.text}}</a></li>
+      <li><a href="/{{.Arc}}">{{.Text}}</a></li>
       {{end}}
     </ul>
     {{else}}
     <h3>The End!</h3>
     {{end}}
-
   </body>
 </html>`
 
@@ -58,7 +84,7 @@ func getStoryArcs() map[string]StoryArc {
 func main() {
 
 	arcs := getStoryArcs()
-
-	fmt.Println(arcs["intro"].Title)
+	handler := StoryHandler{arcs, templateText}
+	log.Fatal(http.ListenAndServe("localhost:8000", handler))
 
 }
